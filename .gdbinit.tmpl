@@ -1,4 +1,17 @@
-set architecture auto
+# When qemu jumps from protected mode to long mode,
+# you would get an error like the following in gdb:
+#	"Remote 'g' packet is reply is too long"
+# The work around is this. When you get such error, type
+# the following command in gdb:
+# > disconnect
+# > set arch i386:x86-64
+# > target remote localhost:<WHATEVER PORT IN .gdbinit>
+# Check more information on
+# https://wiki.osdev.org/QEMU_and_GDB_in_long_mode
+
+
+
+set architecture i386:x86-64:intel
 
 echo + target remote localhost:1234\n
 target remote localhost:1234

@@ -114,7 +114,7 @@ start64:
 	jmp *%rax
 
 .section .text
-.extern _start
+.extern kmain
 .globl start64_high
 start64_high:
 	/* and clear low-memory mapping */
@@ -133,15 +133,12 @@ start64_high:
 	mov $init_stack, %rsp
 
 	/* call the rust code */
-	call _start
+	call kmain
 
 	/* and if that returns (it shouldn't) loop forever */
 start64.loop:
 	hlt
 	jmp start64.loop
-
-
-
 
 /* === Page-aligned data === */
 .section .padata

@@ -23,10 +23,15 @@ LDFLAGS := -m elf_i386
 BTLDERDIR := src/bootloader/
 BIN := ros.img
 
+# CDROM booting.
+ISOBIN := ros.iso
+ISODIR := target/isodir/
+
 # Debug/Emulation options
 CPUS := 2
 GDBPORT := $(shell expr `id -u` % 5000 + 25000)
 QEMU := qemu-system-x86_64
+# QEMUOPTS := -kernel $(OBJDIR)ros -smp $(CPUS) -m 512
 QEMUOPTS := -drive file=$(OBJDIR)fs.img,index=1,media=disk,format=raw \
 		    -drive file=$(BIN),index=0,media=disk,format=raw \
 		    -smp $(CPUS) -m 512 $(QEMUEXTRA)
@@ -48,7 +53,7 @@ $(OBJDIR)fs.img:
 	dd if=/dev/zero of=$(OBJDIR)fs.img count=1000
 
 # Create a file, put bootblock in front and append ros.elf
-$(BIN): $(OBJDIR)bootblock $(OBJDIR)ros $(OBJDIR)fs.img
+$(BIN): $(OBJDIR)ros $(OBJDIR)bootblock $(OBJDIR)fs.img
 	dd if=/dev/zero of=$(BIN) count=10000
 	dd if=$(OBJDIR)bootblock of=$(BIN) conv=notrunc
 	dd if=$(OBJDIR)ros of=$(BIN) seek=1 conv=notrunc
@@ -59,15 +64,35 @@ $(OBJDIR)ros:
 	cargo xbuild --target=x86_64-ros.json
 	$(OBJDUMP) $(OBJDIR)ros -S > ros.asm
 
+# CDROM booting.
+$(ISODIR) $(ISODIR)boot $(ISODIR)boot/grub:
+	mkdir -p $@
+
+$(ISODIR)boot/ros: $(OBJDIR)ros $(ISODIR)boot
+	cp $< $@
+
+$(ISODIR)boot/grub/grub.cfg: grub.cfg $(ISODIR)boot/grub
+	cp $< $@
+
+$(ISOBIN): $(ISODIR)boot/ros $(ISODIR)boot/grub/grub.cfg
+	grub-mkrescue -o $@ $(ISODIR)
+
 .PHONY: check_multiboot
 
-# Emulation
+# Emulation. Remove check_multiboot qemu dependencies if not needed.
 qemu: $(BIN) $(OBJDIR)fs.img check_multiboot
 	$(QEMU) -serial mon:stdio $(QEMUOPTS)
 
 qemu-gdb: $(BIN) $(OBJDIR)fs.img .gdbinit check_multiboot
 	@echo "*** Now run 'gdb'." 1>&2
 	$(QEMU) -serial mon:stdio $(QEMUOPTS) -S $(QEMUGDB)
+
+qemu-iso: $(ISOBIN) check_multiboot
+	$(QEMU) -cdrom $(ISOBIN) -smp $(CPUS) -m 512
+
+qemu-iso-gdb: $(ISOBIN) .gdbinit check_multiboot
+	@echo "*** Now run 'gdb'." 1>&2
+	$(QEMU) -cdrom $(ISOBIN) -smp $(CPUS) -m 512 -S $(QEMUGDB)
 
 .gdbinit: .gdbinit.tmpl
 	sed "s/localhost:1234/localhost:$(GDBPORT)/" < $^ > $@
@@ -76,6 +101,10 @@ qemu-gdb: $(BIN) $(OBJDIR)fs.img .gdbinit check_multiboot
 # Since we're using our own bootloader it could be skipped.
 # If you're using GRUB then it is necessary.
 check_multiboot: $(OBJDIR)ros
+	@echo ""
+	@echo "This command checks if the generated image is multiboot compatible."
+	@echo "Remove the dependency from qemu & qemu-gdb if you write your own bootloader."
+	@echo ""
 	@command -v grub-file >/dev/null 2>&1 || { echo >&2 "grub-file command not found. Aborting."; exit 1; }
 	@grub-file --is-x86-multiboot $(OBJDIR)ros || { echo >&2 "Image file is NOT multiboot compatible. Aborting."; exit 1; }
 	@echo "Yay! It is compatible!"
@@ -85,6 +114,7 @@ check_multiboot: $(OBJDIR)ros
 clean:
 	rm -f .gdbinit $(OBJDIR)ros \
 		  $(OBJDIR)entry.o $(OBJDIR)bootblock $(BIN) ros.asm
+	rm -rf target/isodir
 
 cclean:
 	cargo clean
