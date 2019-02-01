@@ -1,0 +1,29 @@
+[package]
+name = "ros"
+version = "0.1.0"
+authors = ["Yifan Liu <yfliu12061060@outlook.com>"]
+edition = "2018"
+build = "build.rs"
+
+[dependencies]
+spin = "0.4.9"
+volatile = "0.2.3"
+uart_16550 = "0.1.0"
+x86_64 = "0.4.0"
+pic8259_simple = "0.1.1"
+pc-keyboard = "0.3.1"
+
+[dependencies.lazy_static]
+version = "1.0"
+features = ["spin_no_std"]
+
+# the profile used for `cargo build`
+[profile.dev]
+panic = "abort" # disable stack unwinding on panic
+
+# the profile used for `cargo build --release`
+[profile.release]
+panic = "abort" # disable stack unwinding on panic
+
+[build-dependencies]
+cc = "1.0"
