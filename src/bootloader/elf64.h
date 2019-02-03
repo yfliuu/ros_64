@@ -28,9 +28,15 @@ struct prog64hdr {
   uint type;
   uint flags;
   uint off;
+  uint off_pad;
   uint vaddr;
+  uint vaddr_pad;
   uint paddr;
+  uint paddr_pad;
   uint filesz;
+  uint filesz_pad;
   uint memsz;
+  uint memsz_pad;
   uint align;
+  uint align_pad;
 };

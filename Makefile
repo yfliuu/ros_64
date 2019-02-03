@@ -32,9 +32,9 @@ CPUS := 2
 GDBPORT := $(shell expr `id -u` % 5000 + 25000)
 QEMU := qemu-system-x86_64
 # QEMUOPTS := -kernel $(OBJDIR)ros -smp $(CPUS) -m 512
-QEMUOPTS := -drive file=$(OBJDIR)fs.img,index=1,media=disk,format=raw \
-		    -drive file=$(BIN),index=0,media=disk,format=raw \
-		    -smp $(CPUS) -m 512 $(QEMUEXTRA)
+QEMUCOMMON := -drive file=$(OBJDIR)fs.img,index=1,media=disk,format=raw \
+			  -smp $(CPUS) -m 512 -monitor stdio
+QEMUOPTS := $(QEMUCOMMON) -drive file=$(BIN),index=0,media=disk,format=raw
 QEMUGDB := $(shell if $(QEMU) -help | grep -q '^-gdb'; \
            	then echo "-gdb tcp::$(GDBPORT)"; \
            	else echo "-s -p $(GDBPORT)"; fi)
@@ -52,7 +52,7 @@ $(OBJDIR)bootblock: $(BTLDERDIR)bootasm.S $(BTLDERDIR)bootmain.c
 $(OBJDIR)fs.img:
 	dd if=/dev/zero of=$(OBJDIR)fs.img count=1000
 
-# Create a file, put bootblock in front and append ros.elf
+# Create a file, put bootblock in front and append ros
 $(BIN): $(OBJDIR)ros $(OBJDIR)bootblock $(OBJDIR)fs.img
 	dd if=/dev/zero of=$(BIN) count=10000
 	dd if=$(OBJDIR)bootblock of=$(BIN) conv=notrunc
@@ -81,25 +81,23 @@ $(ISOBIN): $(ISODIR)boot/ros $(ISODIR)boot/grub/grub.cfg
 
 # Emulation. Remove check_multiboot qemu dependencies if not needed.
 qemu: $(BIN) $(OBJDIR)fs.img check_multiboot
-	$(QEMU) -serial mon:stdio $(QEMUOPTS)
+	$(QEMU) $(QEMUOPTS)
 
 qemu-gdb: $(BIN) $(OBJDIR)fs.img .gdbinit check_multiboot
 	@echo "*** Now run 'gdb'." 1>&2
-	$(QEMU) -serial mon:stdio $(QEMUOPTS) -S $(QEMUGDB)
+	$(QEMU) $(QEMUOPTS) -S $(QEMUGDB)
 
-qemu-iso: $(ISOBIN) check_multiboot
-	$(QEMU) -cdrom $(ISOBIN) -smp $(CPUS) -m 512
+qemu-iso: $(ISOBIN) $(OBJDIR)fs.img check_multiboot
+	$(QEMU) -cdrom $(ISOBIN) $(QEMUCOMMON)
 
-qemu-iso-gdb: $(ISOBIN) .gdbinit check_multiboot
+qemu-iso-gdb: $(ISOBIN) $(OBJDIR)fs.img .gdbinit check_multiboot
 	@echo "*** Now run 'gdb'." 1>&2
-	$(QEMU) -cdrom $(ISOBIN) -smp $(CPUS) -m 512 -S $(QEMUGDB)
+	$(QEMU) -cdrom $(ISOBIN) $(QEMUCOMMON) -S $(QEMUGDB)
 
 .gdbinit: .gdbinit.tmpl
 	sed "s/localhost:1234/localhost:$(GDBPORT)/" < $^ > $@
 
 # This command checks if the generated image is multiboot compatible.
-# Since we're using our own bootloader it could be skipped.
-# If you're using GRUB then it is necessary.
 check_multiboot: $(OBJDIR)ros
 	@echo ""
 	@echo "This command checks if the generated image is multiboot compatible."
