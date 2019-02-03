@@ -11,12 +11,8 @@ pub extern "C" fn kmain() -> ! {
     println!("HELLO WORLD2");
     println!("HELLO WORLD3");
     println!("HELLO WORLD4");
-    forever();
-}
 
-#[no_mangle]
-fn forever() -> ! {
-    loop{}
+    loop {}
 }
 
 #[panic_handler]
