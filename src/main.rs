@@ -3,14 +3,13 @@
 #![feature(asm)]
 
 use core::panic::PanicInfo;
-use ros::println;
+use ros::{println, UART};
 
 #[no_mangle] // don't mangle the name of this function
 pub extern "C" fn kmain() -> ! {
-    println!("HELLO W");
-    println!("HELLO WORLD2");
-    println!("HELLO WORLD3");
-    println!("HELLO WORLD4");
+
+    println!("Initializing UART");
+    UART.init();
 
     loop {}
 }
