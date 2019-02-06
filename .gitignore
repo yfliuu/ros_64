@@ -6,3 +6,4 @@
 *.asm
 .gdbinit
 *.iso
+fix_gdb

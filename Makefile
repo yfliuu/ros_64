@@ -111,9 +111,9 @@ check_multiboot: $(OBJDIR)ros
 # No recompilation of core and builtins
 clean:
 	rm -f .gdbinit $(OBJDIR)ros \
-		  $(OBJDIR)entry.o $(OBJDIR)bootblock $(BIN) ros.asm
+		  $(OBJDIR)entry.o $(OBJDIR)bootblock $(BIN) ros.asm ros.iso
 	rm -rf target/isodir
 
 cclean:
 	cargo clean
-	rm -f .gdbinit
+	rm -f .gdbinit ros.iso

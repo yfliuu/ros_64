@@ -3,7 +3,10 @@
 #![feature(asm)]
 
 use core::panic::PanicInfo;
-use ros::{println, UART};
+use ros::{println, UART, p2v};
+use ros::kern::kalloc::{kinit1};
+use x86_64::VirtAddr as VA;
+
 
 #[no_mangle] // don't mangle the name of this function
 pub extern "C" fn kmain() -> ! {
@@ -11,6 +14,10 @@ pub extern "C" fn kmain() -> ! {
     println!("Initializing UART");
     UART.init();
 
+    println!("Initializing physical page allocator");
+    kinit1(*ros::KERN_END, VA::new(p2v!(4*1024*1024 as u64)));
+
+    println!("Initializing virtual memory");
     loop {}
 }
 

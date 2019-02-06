@@ -36,7 +36,9 @@ SECTIONS {
 		*(.bss .bss.*)
 	}
 
-	kernel_end = .;
+    . = ALIGN(0x1000);
+
+	PROVIDE(KERNEL_END = .);
 
 	/DISCARD/ : {
 		*(.note .note.*)
