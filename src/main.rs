@@ -4,7 +4,8 @@
 
 use core::panic::PanicInfo;
 use ros::{println, UART, p2v};
-use ros::kern::kalloc::{kinit1};
+use ros::kern::kalloc::kinit1;
+use ros::kern::vm::kvmalloc;
 use x86_64::VirtAddr as VA;
 
 
@@ -18,6 +19,7 @@ pub extern "C" fn kmain() -> ! {
     kinit1(*ros::KERN_END, VA::new(p2v!(4*1024*1024 as u64)));
 
     println!("Initializing virtual memory");
+    kvmalloc();
     loop {}
 }
 
