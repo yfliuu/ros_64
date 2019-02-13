@@ -34,6 +34,17 @@ pub fn memset<T>(dst: *mut T, val: u8, count: u64) -> () {
     }
 }
 
+pub fn memcmp(src: *const u8, dst: *const u8, len: u64) -> bool {
+    unsafe {
+        for i in 0..len as isize {
+            if *src.offset(i) != *dst.offset(i) {
+                return false
+            }
+        }
+    }
+    true
+}
+
 pub fn ptr2u64<T>(ptr: *mut T) -> u64 {
     use usize_conversions::FromUsize;
 

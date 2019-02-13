@@ -2,7 +2,7 @@ use crate::kern::kalloc::kalloc;
 use crate::*;
 
 #[repr(C)]
-struct KVM {
+struct KernVM {
     kpml4: u64,
     kpdpt: u64,
     kpgdir0: u64,
@@ -11,10 +11,10 @@ struct KVM {
 }
 
 lazy_static! {
-    static ref kvm: KVM = init_vm();
+    static ref KVM: KernVM = init_vm();
 }
 
-fn init_vm() -> KVM {
+fn init_vm() -> KernVM {
     let pml4 = kalloc().as_mut_ptr::<u64>();
     let pdpt = kalloc().as_mut_ptr::<u64>();
     let pgdir0 = kalloc().as_mut_ptr::<u64>();
@@ -51,7 +51,7 @@ fn init_vm() -> KVM {
         }
     }
 
-    KVM {
+    KernVM {
         kpml4: ptr2u64(pml4),
         kpdpt: ptr2u64(pdpt),
         kpgdir1: ptr2u64(pgdir1),
@@ -65,7 +65,7 @@ pub fn kvmalloc() -> () {
 }
 
 fn switch_kvm() -> () {
-    let value = v2p!(kvm.kpml4);
+    let value = v2p!(KVM.kpml4);
     unsafe {
         asm!("mov $0, %cr3" :: "r" (value) : "memory");
     }

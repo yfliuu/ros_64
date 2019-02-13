@@ -6,6 +6,7 @@ use core::panic::PanicInfo;
 use ros::{println, UART, p2v};
 use ros::kern::kalloc::kinit1;
 use ros::kern::vm::kvmalloc;
+use ros::kern::mp::mpinit;
 use x86_64::VirtAddr as VA;
 
 
@@ -20,6 +21,10 @@ pub extern "C" fn kmain() -> ! {
 
     println!("Initializing virtual memory");
     kvmalloc();
+
+    println!("Initializing multi processor");
+    mpinit();
+
     loop {}
 }
 
