@@ -1,7 +1,7 @@
 use spin::Mutex;
 use lazy_static::lazy_static;
 use x86_64::{VirtAddr as VA};
-use crate::{PGSIZE, memset};
+use crate::*;
 
 #[repr(transparent)]
 struct Run {
@@ -15,7 +15,7 @@ struct PhysPgAllocator {
 
 lazy_static! {
     static ref KMEM: Mutex<PhysPgAllocator> = Mutex::new(PhysPgAllocator{
-        freelist: 0x0 as *mut Run,
+        freelist: null_mut(),
     });
 }
 
@@ -39,6 +39,7 @@ impl PhysPgAllocator {
         if !v.is_aligned(PGSIZE) {
             panic!("kfree")
         }
+
         let r = v.as_mut_ptr::<Run>();
         unsafe {
             memset(r, 1, PGSIZE);
@@ -48,13 +49,16 @@ impl PhysPgAllocator {
     }
 
     fn kalloc(&mut self) -> VA {
-        let r = self.freelist as *mut Run;
+        let r = self.freelist;
         unsafe {
-            if r.ne(&(0x0 as *mut Run)) {
+            if !r.is_null() {
                 self.freelist = (*r).next;
+                VA::new(r as u64)
+            } else{
+                VA::new(0x0)
             }
         }
-        VA::new(r as u64)
+
     }
 }
 
@@ -69,8 +73,12 @@ pub fn kfree(v: VA) -> () {
     KMEM.lock().kfree(v);
 }
 
-pub fn kalloc() -> VA {
-    KMEM.lock().kalloc()
+pub fn kalloc() -> Option<VA> {
+    let v = KMEM.lock().kalloc();
+    match v.as_u64() {
+        0x0 => None,
+        _ => Some(v),
+    }
 }
 
 #[macro_export]

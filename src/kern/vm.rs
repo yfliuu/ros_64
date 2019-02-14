@@ -15,11 +15,12 @@ lazy_static! {
 }
 
 fn init_vm() -> KernVM {
-    let pml4 = kalloc().as_mut_ptr::<u64>();
-    let pdpt = kalloc().as_mut_ptr::<u64>();
-    let pgdir0 = kalloc().as_mut_ptr::<u64>();
-    let pgdir1 = kalloc().as_mut_ptr::<u64>();
-    let iopgdir = kalloc().as_mut_ptr::<u64>();
+    // These memory allocations should not fail. Panic on unwrap if failed.
+    let pml4 = kalloc().unwrap().as_mut_ptr::<u64>();
+    let pdpt = kalloc().unwrap().as_mut_ptr::<u64>();
+    let pgdir0 = kalloc().unwrap().as_mut_ptr::<u64>();
+    let pgdir1 = kalloc().unwrap().as_mut_ptr::<u64>();
+    let iopgdir = kalloc().unwrap().as_mut_ptr::<u64>();
 
     memset(pml4, 0, PGSIZE);
     memset(pdpt, 0, PGSIZE);

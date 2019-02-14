@@ -5,6 +5,8 @@ use lazy_static::lazy_static;
 use x86_64::VirtAddr as VA;
 use core::ptr::write_bytes;
 use core::mem::size_of;
+use core::option::Option;
+use core::ptr::{null_mut};
 
 pub mod kern;
 
