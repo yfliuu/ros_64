@@ -13,7 +13,7 @@ lazy_static! {
 impl Lapic {
     fn new() -> Self {
         Lapic {
-            lapic: match CPU_INFO.get_lapic() {
+            lapic: match CPU_INFO.get_lapic().as_u64() {
                 0 => panic!("LAPIC address null"),
                 x => x,
             } }

@@ -3,11 +3,11 @@ use crate::*;
 
 #[repr(C)]
 struct KernVM {
-    kpml4: u64,
-    kpdpt: u64,
-    kpgdir0: u64,
-    kpgdir1: u64,
-    iopgdir: u64,
+    kpml4: VA,
+    kpdpt: VA,
+    kpgdir0: VA,
+    kpgdir1: VA,
+    iopgdir: VA,
 }
 
 lazy_static! {
@@ -53,20 +53,20 @@ fn init_vm() -> KernVM {
     }
 
     KernVM {
-        kpml4: ptr2u64(pml4),
-        kpdpt: ptr2u64(pdpt),
-        kpgdir1: ptr2u64(pgdir1),
-        kpgdir0: ptr2u64(pgdir0),
-        iopgdir: ptr2u64(iopgdir),
+        kpml4: VA::from_ptr(pml4),
+        kpdpt: VA::from_ptr(pdpt),
+        kpgdir1: VA::from_ptr(pgdir1),
+        kpgdir0: VA::from_ptr(pgdir0),
+        iopgdir: VA::from_ptr(iopgdir),
     }
 }
 
-pub fn kvmalloc() -> () {
+pub fn kvm_alloc() -> () {
     switch_kvm();
 }
 
 fn switch_kvm() -> () {
-    let value = v2p!(KVM.kpml4);
+    let value = v2p!(KVM.kpml4.as_u64());
     unsafe {
         asm!("mov $0, %cr3" :: "r" (value) : "memory");
     }

@@ -64,7 +64,7 @@ struct CPU {
 
 pub struct CpuInfo {
     cpus: [CPU; MAX_CPU],
-    lapic: u64,
+    lapic: VA,
     is_mp: bool,
     ncpu: u8,
     ioapicid: u8,
@@ -177,7 +177,7 @@ impl CpuInfo {
                 }
                 CpuInfo {
                     cpus: cpus,
-                    lapic: io2v!((*conf).lapicaddr as u64),
+                    lapic: VA::new(io2v!((*conf).lapicaddr as u64)),
                     is_mp: true,
                     ncpu: ncpu,
                     ioapicid: ioapic_id,
@@ -187,21 +187,21 @@ impl CpuInfo {
         }
     }
 
-    pub fn get_lapic(&self) -> u64 { self.lapic }
+    pub fn get_lapic(&self) -> VA { self.lapic }
 }
 
 lazy_static! {
     pub static ref CPU_INFO: CpuInfo = CpuInfo::init();
 }
 
-pub fn mpinit() -> () {
+pub fn mp_init() -> () {
     // Read the static variable to trigger init()
     for i in 0..CPU_INFO.ncpu {
         println!("cpu{}: id: {}, apic_id: {}", i, CPU_INFO.cpus[i as usize].id,
                  CPU_INFO.cpus[i as usize].apic_id);
     }
     println!("ncpu: {}", CPU_INFO.ncpu);
-    println!("lapic: {:x}", CPU_INFO.lapic);
+    println!("lapic: {:x}", CPU_INFO.lapic.as_u64());
     println!("ioapicid: {}", CPU_INFO.ioapicid);
 }
 
