@@ -93,5 +93,5 @@ macro_rules! v2p {
 
 #[macro_export]
 macro_rules! io2v {
-    ($x:expr) => ($x + ($crate::DEVBASE) - ($crate::DEVSPACE))
+    ($x:expr) => ($x - ($crate::DEVSPACE) + ($crate::DEVBASE))
 }

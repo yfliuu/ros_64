@@ -5,6 +5,7 @@ use volatile::Volatile;
 
 const VGA_BUFFER: u64 = 0xffffffff800b8000;
 
+// TODO: Add cursor movement
 lazy_static! {
     /// A global `Writer` instance that can be used for printing to the VGA text buffer.
     ///

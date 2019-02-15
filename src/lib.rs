@@ -73,3 +73,11 @@ pub const PTE_A  : u64 = 0x020;   // Accessed
 pub const PTE_D  : u64 = 0x040;   // Dirty
 pub const PTE_PS : u64 = 0x080;   // Page Size
 pub const PTE_MBZ: u64 = 0x180;   // Bits must be zero
+
+// -----------MP TABLE ENTRY--------------------
+pub const MAX_CPU   : usize = 8;
+pub const MPPROC    : u8 = 0x00;  // One per processor
+pub const MPBUS     : u8 = 0x01;  // One per bus
+pub const MPIOAPIC  : u8 = 0x02;  // One per I/O APIC
+pub const MPIOINTR  : u8 = 0x03;  // One per bus interrupt source
+pub const MPLINTR   : u8 = 0x04;  // One per system interrupt source
