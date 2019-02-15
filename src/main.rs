@@ -7,6 +7,7 @@ use ros::{println, UART, p2v};
 use ros::kern::kalloc::kinit1;
 use ros::kern::vm::kvmalloc;
 use ros::kern::mp::mpinit;
+use ros::kern::lapic::lapic_init;
 use x86_64::VirtAddr as VA;
 
 
@@ -24,6 +25,9 @@ pub extern "C" fn kmain() -> ! {
 
     println!("Initializing multi processor");
     mpinit();
+
+    println!("Initializing LAPIC");
+    lapic_init();
 
     loop {}
 }

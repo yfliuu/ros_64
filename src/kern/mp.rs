@@ -62,7 +62,7 @@ struct CPU {
     intena: bool
 }
 
-struct CpuInfo {
+pub struct CpuInfo {
     cpus: [CPU; MAX_CPU],
     lapic: u64,
     is_mp: bool,
@@ -186,14 +186,16 @@ impl CpuInfo {
             _ => panic!("Expect to run on an SMP"),
         }
     }
+
+    pub fn get_lapic(&self) -> u64 { self.lapic }
 }
 
 lazy_static! {
-    static ref CPU_INFO: CpuInfo = CpuInfo::init();
+    pub static ref CPU_INFO: CpuInfo = CpuInfo::init();
 }
 
 pub fn mpinit() -> () {
-    // Read the static variable to trigger mpinit1()
+    // Read the static variable to trigger init()
     for i in 0..CPU_INFO.ncpu {
         println!("cpu{}: id: {}, apic_id: {}", i, CPU_INFO.cpus[i as usize].id,
                  CPU_INFO.cpus[i as usize].apic_id);
