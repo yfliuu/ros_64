@@ -4,11 +4,8 @@
 
 use core::panic::PanicInfo;
 use ros::{println, UART, p2v};
-use ros::kern::kalloc::kinit1;
-use ros::kern::vm::kvm_alloc;
-use ros::kern::mp::mp_init;
-use ros::kern::lapic::lapic_init;
 use x86_64::VirtAddr as VA;
+use ros::hlt_loop;
 
 
 #[no_mangle] // don't mangle the name of this function
@@ -18,18 +15,28 @@ pub extern "C" fn kmain() -> ! {
     UART.init();
 
     println!("Initializing physical page allocator");
-    kinit1(*ros::KERN_END, VA::new(p2v!(4*1024*1024 as u64)));
+    ros::kern::kalloc::kinit1(*ros::KERN_END, VA::new(p2v!(4*1024*1024 as u64)));
 
     println!("Initializing virtual memory");
-    kvm_alloc();
+    ros::kern::vm::kvm_alloc();
 
     println!("Initializing multi processor");
-    mp_init();
+    ros::kern::mp::mp_init();
 
     println!("Initializing LAPIC");
-    lapic_init();
+    ros::kern::lapic::lapic_init();
 
-    loop {}
+    println!("Loading GDT & IDT");
+    ros::kern::gdt::gdt_init();
+    ros::kern::idt::idt_init();
+
+    println!("Initializing IOAPIC");
+    ros::kern::ioapic::ioapic_init();
+
+    println!("Initializing console");
+    ros::kern::console::console_init();
+
+    hlt_loop()
 }
 
 #[panic_handler]

@@ -62,7 +62,6 @@ $(BIN): $(OBJDIR)ros $(OBJDIR)bootblock $(OBJDIR)fs.img
 # The compilation of the entry stub (entry.S) is done in build script (build.rs).
 $(OBJDIR)ros:
 	cargo xbuild --target=x86_64-ros.json
-	$(OBJDUMP) $(OBJDIR)ros -S > ros.asm
 
 # CDROM booting.
 $(ISODIR) $(ISODIR)boot $(ISODIR)boot/grub:

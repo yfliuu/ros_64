@@ -65,7 +65,6 @@ struct CPU {
 pub struct CpuInfo {
     cpus: [CPU; MAX_CPU],
     lapic: VA,
-    is_mp: bool,
     ncpu: u8,
     ioapicid: u8,
 }
@@ -157,6 +156,7 @@ impl CpuInfo {
                 let mut p = conf.offset(1) as *const u8;
                 let length = (*conf).length;
                 let e = (conf as *const u8).offset(length as isize);
+                println!("lapic pa: {:x}", (*conf).lapicaddr);
                 while p < e {
                     match *p {
                         MPPROC => {
@@ -178,7 +178,6 @@ impl CpuInfo {
                 CpuInfo {
                     cpus: cpus,
                     lapic: VA::new(io2v!((*conf).lapicaddr as u64)),
-                    is_mp: true,
                     ncpu: ncpu,
                     ioapicid: ioapic_id,
                 }
@@ -188,6 +187,7 @@ impl CpuInfo {
     }
 
     pub fn get_lapic(&self) -> VA { self.lapic }
+    pub fn ioapic_id(&self) -> u8 { self.ioapicid }
 }
 
 lazy_static! {

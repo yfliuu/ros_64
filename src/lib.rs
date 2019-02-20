@@ -1,5 +1,7 @@
 #![no_std]
 #![feature(asm)]
+#![feature(abi_x86_interrupt)]
+#![feature(const_raw_ptr_deref)]
 
 use lazy_static::lazy_static;
 use x86_64::VirtAddr as VA;
@@ -36,7 +38,7 @@ pub fn memset<T>(dst: *mut T, val: u8, count:u64) -> () {
     }
 }
 
-pub fn memcmp(src: *const u8, dst: *const u8, len:u64) -> bool {
+pub fn memcmp(src: *const u8, dst: *const u8, len: u64) -> bool {
     unsafe {
         for i in 0..len as isize {
             if *src.offset(i) != *dst.offset(i) {
@@ -47,12 +49,16 @@ pub fn memcmp(src: *const u8, dst: *const u8, len:u64) -> bool {
     true
 }
 
-pub fn ptr2u64<T>(ptr: *mut T) -> u64 {
-    use usize_conversions::FromUsize;
-
-    u64::from_usize(ptr as usize)
+pub fn memmove<T>(dst: *mut T, src: *mut T, len: usize) -> () {
+    if len % size_of::<T>()!= 0 { panic!("memmove") }
+    unsafe { src.copy_to(dst, len / size_of::<T>()); }
 }
 
+pub fn hlt_loop() -> ! {
+    loop {
+        x86_64::instructions::hlt();
+    }
+}
 
 // ----------MEM LAYOUT----------
 pub const PGSIZE:u64 = 4096; // 4KB page
@@ -113,6 +119,23 @@ pub const TICR     :u32 = (0x0380/4);   // Timer Initial Count
 pub const TCCR     :u32 = (0x0390/4);   // Timer Current Count
 pub const TDCR     :u32 = (0x03E0/4);   // Timer Divide Configuration
 
+// ----------------IOAPIC--------------------
+pub const IOAPIC_ADDR:  u64 = 0xFEC00000;   // Default physical address of IO APIC
+
+pub const REG_ID:       u32 = 0x00;  // Register index: ID
+pub const REG_VER:      u32 = 0x01;  // Register index: version
+pub const REG_TABLE:    u32 = 0x10;  // Redirection table base
+
+// The redirection table starts at REG_TABLE and uses
+// two registers to configure each interrupt.
+// The first (low) register in a pair contains configuration bits.
+// The second (high) register contains a bitmask telling which
+// CPUs can serve that interrupt.
+pub const INT_DISABLED:     u32 = 0x00010000;       // Interrupt disabled
+pub const INT_LEVEL:        u32 = 0x00008000;       // Level-triggered (vs edge-)
+pub const INT_ACTIVELOW:    u32 = 0x00002000;       // Active low (vs high)
+pub const INT_LOGICAL:      u32 = 0x00000800;       // Destination is CPU id (vs APIC ID)
+
 // ---------------TRAPS----------------------------
 // Processor-defined:
 pub const T_DIVIDE     :u32 =    0;      // divide error
@@ -149,3 +172,4 @@ pub const IRQ_COM1     :u32 =    4;
 pub const IRQ_IDE      :u32 =   14;
 pub const IRQ_ERROR    :u32 =   19;
 pub const IRQ_SPURIOUS :u32 =   31;
+

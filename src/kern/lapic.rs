@@ -1,13 +1,15 @@
 use kern::mp::CPU_INFO;
 use crate::*;
+use volatile::Volatile;
+use spin::Mutex;
 
-
+#[repr(transparent)]
 pub struct Lapic {
     lapic: u64,
 }
 
 lazy_static! {
-    pub static ref LAPIC: Lapic = Lapic::new();
+    static ref LAPIC: Mutex<Lapic> = Mutex::new(Lapic::new());
 }
 
 impl Lapic {
@@ -20,16 +22,17 @@ impl Lapic {
     }
 
     fn wrt(&self, i: u32, v: u32) -> () {
+        let ptr = self.lapic as *mut Volatile<u32>;
         unsafe {
-            *(self.lapic as *mut u32).offset(i as isize) = v;
-
+            (*(ptr.offset(i as isize))).write(v);
             // Wait for write to finish, by reading
-            let _ = *(self.lapic as *mut u32).offset(ID as isize);
+            (*(ptr.offset(ID as isize))).read();
         }
     }
 
     fn rd(&self, i: u32) -> u32 {
-        unsafe { *(self.lapic as *mut u32).offset(i as isize) }
+        let ptr = self.lapic as *mut Volatile<u32>;
+        unsafe { (*(ptr).offset(i as isize)).read() }
     }
 
     fn init(&self) -> () {
@@ -72,8 +75,26 @@ impl Lapic {
         // Enable interrupts on the APIC (but not on the processor).
         self.wrt(TPR, 0);
     }
+
+    // Acknowledge interrupt.
+    pub fn lapic_eoi(&self) -> () { self.wrt(EOI, 0) }
 }
 
 pub fn lapic_init() -> () {
-    LAPIC.init();
+    // Setting up LAPIC.
+    LAPIC.lock().init();
+
+    // Disable the 8259A because we're in SMP environment.
+    // OSDevWiki: Disable the 8259 PIC properly is nearly as important as setting up the APIC.
+    use x86_64::instructions::port::Port;
+
+    const IO_PIC1: u16 = 0x20;
+    const IO_PIC2: u16 = 0xA0;
+
+    unsafe {
+        Port::new(IO_PIC1 + 1 as u16).write(0xff as u8);
+        Port::new(IO_PIC2 + 1 as u16).write(0xff as u8);
+    }
 }
+
+pub fn lapic_eoi() -> () { (*(LAPIC.lock())).lapic_eoi(); }

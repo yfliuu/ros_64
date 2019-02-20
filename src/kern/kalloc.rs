@@ -35,8 +35,7 @@ impl PhysPgAllocator {
     }
 
     fn kfree(&mut self, v: VA) -> () {
-        // TODO: Here we should check that v is in the safe range
-        if !v.is_aligned(PGSIZE) {
+        if !v.is_aligned(PGSIZE) || v.lt(&KERN_END) || v2p!(v.as_u64()) >= PHYSTOP {
             panic!("kfree")
         }
 

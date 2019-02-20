@@ -2,18 +2,24 @@ use core::fmt;
 use lazy_static::lazy_static;
 use spin::Mutex;
 use volatile::Volatile;
+use x86_64::instructions::port::Port;
+use crate::memmove;
+use core::mem::size_of;
+use crate::memset;
 
 const VGA_BUFFER: u64 = 0xffffffff800b8000;
+const CRT_PORT: u16 = 0x3d4;
+const BACKSPACE: u8 = 0x08;
 
-// TODO: Add cursor movement
 lazy_static! {
     /// A global `Writer` instance that can be used for printing to the VGA text buffer.
     ///
     /// Used by the `print!` and `println!` macros.
     pub static ref WRITER: Mutex<Writer> = Mutex::new(Writer {
-        column_position: 0,
         color_code: ColorCode::new(Color::Yellow, Color::Black),
         buffer: unsafe { &mut *(VGA_BUFFER as *mut Buffer) },
+        crt_p1: Port::new(CRT_PORT),
+        crt_p2: Port::new(CRT_PORT + 1),
     });
 }
 
@@ -66,7 +72,7 @@ const BUFFER_WIDTH: usize = 80;
 
 /// A structure representing the VGA text buffer.
 struct Buffer {
-    chars: [[Volatile<ScreenChar>; BUFFER_WIDTH]; BUFFER_HEIGHT],
+    chars: [Volatile<ScreenChar>; BUFFER_WIDTH * BUFFER_HEIGHT],
 }
 
 /// A writer type that allows writing ASCII bytes and strings to an underlying `Buffer`.
@@ -74,35 +80,57 @@ struct Buffer {
 /// Wraps lines at `BUFFER_WIDTH`. Supports newline characters and implements the
 /// `core::fmt::Write` trait.
 pub struct Writer {
-    column_position: usize,
     color_code: ColorCode,
     buffer: &'static mut Buffer,
+    crt_p1: Port<u8>,
+    crt_p2: Port<u8>,
 }
 
 impl Writer {
     /// Writes an ASCII byte to the buffer.
     ///
     /// Wraps lines at `BUFFER_WIDTH`. Supports the `\n` newline character.
-    pub fn write_byte(&mut self, byte: u8) {
+    pub fn write_byte(&mut self, byte: u8) { unsafe {
+        self.crt_p1.write(14);
+        let mut pos: u32 = (self.crt_p2.read() as u32) << 8;
+        self.crt_p1.write(15);
+        pos |= self.crt_p2.read() as u32;
+
         match byte {
-            b'\n' => self.new_line(),
-            byte => {
-                if self.column_position >= BUFFER_WIDTH {
-                    self.new_line();
-                }
-
-                let row = BUFFER_HEIGHT - 1;
-                let col = self.column_position;
-
-                let color_code = self.color_code;
-                self.buffer.chars[row][col].write(ScreenChar {
-                    ascii_character: byte,
-                    color_code,
+            b'\n' => pos += 80 - pos % 80,
+            BACKSPACE => if pos > 0 { pos -= 1; }
+            c => {
+                self.buffer.chars[pos as usize].write(ScreenChar {
+                    ascii_character: c as u8,
+                    color_code: self.color_code,
                 });
-                self.column_position += 1;
+                pos += 1;
             }
         }
-    }
+
+        let crt = self.buffer.chars.as_mut_ptr() as *mut u16;
+
+        // Scroll up.
+        if (pos / 80) >= 24 {
+            memmove::<u16>(crt,
+                           crt.offset(80),
+                           (size_of::<ScreenChar>() * 23 * 80) as usize);
+            pos -= 80;
+            memset(crt.offset(pos as isize),
+                   0,
+                   (size_of::<ScreenChar>() * (24 * 80 - pos) as usize) as u64);
+        }
+
+        self.crt_p1.write(14);
+        self.crt_p2.write((pos >> 8) as u8);
+        self.crt_p1.write(15);
+        self.crt_p2.write(pos as u8);
+
+        self.buffer.chars[pos as usize].write(ScreenChar {
+            ascii_character: b' ',
+            color_code: self.color_code,
+        });
+    } }
 
     /// Writes the given ASCII string to the buffer.
     ///
@@ -113,33 +141,10 @@ impl Writer {
         for byte in s.bytes() {
             match byte {
                 // printable ASCII byte or newline
-                0x20...0x7e | b'\n' => self.write_byte(byte),
+                0x20...0x7e | b'\n' | BACKSPACE => self.write_byte(byte),
                 // not part of printable ASCII range
                 _ => self.write_byte(0xfe),
             }
-        }
-    }
-
-    /// Shifts all lines one line up and clears the last row.
-    fn new_line(&mut self) {
-        for row in 1..BUFFER_HEIGHT {
-            for col in 0..BUFFER_WIDTH {
-                let character = self.buffer.chars[row][col].read();
-                self.buffer.chars[row - 1][col].write(character);
-            }
-        }
-        self.clear_row(BUFFER_HEIGHT - 1);
-        self.column_position = 0;
-    }
-
-    /// Clears a row by overwriting it with blank characters.
-    fn clear_row(&mut self, row: usize) {
-        let blank = ScreenChar {
-            ascii_character: b' ',
-            color_code: self.color_code,
-        };
-        for col in 0..BUFFER_WIDTH {
-            self.buffer.chars[row][col].write(blank);
         }
     }
 }
@@ -173,4 +178,10 @@ pub fn _print(args: fmt::Arguments) {
     interrupts::without_interrupts(|| {
         WRITER.lock().write_fmt(args).unwrap();
     });
+}
+
+pub fn console_init() -> () {
+    use crate::kern::ioapic::ioapic_enable;
+    // TODO: Link console read/write to stdin/out
+    ioapic_enable(crate::IRQ_KBD, 0);
 }
