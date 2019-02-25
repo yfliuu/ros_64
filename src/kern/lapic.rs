@@ -1,7 +1,6 @@
 use kern::mp::CPU_INFO;
 use crate::*;
 use volatile::Volatile;
-use spin::Mutex;
 
 #[repr(transparent)]
 pub struct Lapic {
@@ -9,7 +8,7 @@ pub struct Lapic {
 }
 
 lazy_static! {
-    static ref LAPIC: Mutex<Lapic> = Mutex::new(Lapic::new());
+    static ref LAPIC: Lapic = Lapic::new();
 }
 
 impl Lapic {
@@ -82,7 +81,7 @@ impl Lapic {
 
 pub fn lapic_init() -> () {
     // Setting up LAPIC.
-    LAPIC.lock().init();
+    LAPIC.init();
 
     // Disable the 8259A because we're in SMP environment.
     // OSDevWiki: Disable the 8259 PIC properly is nearly as important as setting up the APIC.
@@ -97,4 +96,11 @@ pub fn lapic_init() -> () {
     }
 }
 
-pub fn lapic_eoi() -> () { (*(LAPIC.lock())).lapic_eoi(); }
+pub fn lapic_eoi() -> () {
+    LAPIC.lapic_eoi();
+}
+
+// Enable interrupt on this processor
+pub unsafe fn sti() -> () {
+    asm!("sti");
+}

@@ -6,3 +6,6 @@ pub mod lapic;
 pub mod gdt;
 pub mod idt;
 pub mod ioapic;
+pub mod uart;
+pub mod proc;
+pub mod file;

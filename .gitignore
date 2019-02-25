@@ -7,3 +7,5 @@
 .gdbinit
 *.iso
 *.gdbcommand
+note
+.DS_Store

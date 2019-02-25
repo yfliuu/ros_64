@@ -75,8 +75,8 @@ impl MP {
     // 1) in the first KB of the EBDA;
     // 2) in the last KB of system base memory;
     // 3) in the BIOS ROM between 0xe0000 and 0xfffff. (In QEMU we will find it in this option)
-    fn search() -> Option<*const MP> {
-        fn mp_search_1(a: u64, len: u64) -> Option<*const MP> {
+    unsafe fn search() -> Option<*const MP> {
+        unsafe fn mp_search_1(a: u64, len: u64) -> Option<*const MP> {
             let addr: u64 = p2v!(a);
             let e: u64 = addr + len;
             let mut p: u64 = addr;
@@ -91,27 +91,25 @@ impl MP {
         }
 
         let bda = p2v!(0x400) as *mut u8;
-        unsafe {
-            let p: u64 = (((*bda.offset(0x0f) as u64) << 8) |
-                (*bda.offset(0x0e) as u64)) << 4;
+        let p: u64 = (((*bda.offset(0x0f) as u64) << 8) |
+            (*bda.offset(0x0e) as u64)) << 4;
 
-            match p {
-                0 => {
-                    let p = (((*bda.offset(0x14) as u64) << 8) |
-                        ((*bda.offset(0x13) as u64) << 8)) << 10;
-                    mp_search_1(p as u64 - 1024, 1024)
-                }
-                _ => { match mp_search_1(p as u64, 1024) {
-                    Some(x) => Some(x),
-                    None => mp_search_1(0xf0000, 0x10000)
-                } }
+        match p {
+            0 => {
+                let p = (((*bda.offset(0x14) as u64) << 8) |
+                    ((*bda.offset(0x13) as u64) << 8)) << 10;
+                mp_search_1(p as u64 - 1024, 1024)
             }
+            _ => { match mp_search_1(p as u64, 1024) {
+                Some(x) => Some(x),
+                None => mp_search_1(0xf0000, 0x10000)
+            } }
         }
     }
 }
 
 impl MPConf {
-    fn is_valid(&self) -> bool {
+    unsafe fn is_valid(&self) -> bool {
         memcmp(self.signature.as_ptr(), "PCMP".as_ptr(), 4) &&
             (self.version == 1 || self.version == 4) &&
             sum(self.signature.as_ptr(), self.length as usize) == 0
@@ -144,19 +142,19 @@ impl CPU {
 }
 
 impl CpuInfo {
-    fn init() -> Self {
+    unsafe fn init() -> Self {
         let mp = MP::search();
         let opt_conf = MPConf::config(mp);
-        let mut cpus: [CPU; MAX_CPU] = unsafe { uninitialized() };
+        let mut cpus: [CPU; MAX_CPU] = uninitialized();
         let mut ncpu: u8 = 0;
         let mut ioapic_id: u8 = 0;
 
         match opt_conf {
-            Some(conf) => { unsafe {
+            Some(conf) => {
                 let mut p = conf.offset(1) as *const u8;
                 let length = (*conf).length;
                 let e = (conf as *const u8).offset(length as isize);
-                println!("lapic pa: {:x}", (*conf).lapicaddr);
+                println!("lapic pa: 0x{:x}", (*conf).lapicaddr);
                 while p < e {
                     match *p {
                         MPPROC => {
@@ -181,7 +179,7 @@ impl CpuInfo {
                     ncpu: ncpu,
                     ioapicid: ioapic_id,
                 }
-            } }
+            }
             _ => panic!("Expect to run on an SMP"),
         }
     }
@@ -191,7 +189,7 @@ impl CpuInfo {
 }
 
 lazy_static! {
-    pub static ref CPU_INFO: CpuInfo = CpuInfo::init();
+    pub static ref CPU_INFO: CpuInfo = unsafe { CpuInfo::init() };
 }
 
 pub fn mp_init() -> () {
@@ -200,8 +198,7 @@ pub fn mp_init() -> () {
         println!("cpu{}: id: {}, apic_id: {}", i, CPU_INFO.cpus[i as usize].id,
                  CPU_INFO.cpus[i as usize].apic_id);
     }
-    println!("ncpu: {}", CPU_INFO.ncpu);
-    println!("lapic: {:x}", CPU_INFO.lapic.as_u64());
+    println!("lapic: 0x{:x}", CPU_INFO.lapic.as_u64());
     println!("ioapicid: {}", CPU_INFO.ioapicid);
 }
 

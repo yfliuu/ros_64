@@ -1,7 +1,7 @@
 ENTRY(start)
 OUTPUT_FORMAT(elf64-x86-64)
 
-KERNEL_BASE = 0xFFFFFFFF80000000;
+_KERNEL_BASE = 0xFFFFFFFF80000000;
 
 SECTIONS {
 
@@ -14,31 +14,33 @@ SECTIONS {
 		*(.inittext)
 	}
 
-	. += KERNEL_BASE;
+	. += _KERNEL_BASE;
 
-	.text ALIGN(0x1000) : AT(ADDR(.text) - KERNEL_BASE) {
+	.text ALIGN(0x1000) : AT(ADDR(.text) - _KERNEL_BASE) {
 		*(.text .text.*)
 	}
 
 	/* read-only data, page aligned to allow use of the no-execute feature */
-	.rodata ALIGN(0x1000) : AT(ADDR(.rodata) - KERNEL_BASE) {
+	.rodata ALIGN(0x1000) : AT(ADDR(.rodata) - _KERNEL_BASE) {
 		*(.rodata .rodata.*)
 	}
 
+    PROVIDE(_KERNEL_DATA = .);
+
 	/* Read-write data, page aligned for the .padata section */
-	.data ALIGN(0x1000) : AT(ADDR(.data) - KERNEL_BASE) {
+	.data ALIGN(0x1000) : AT(ADDR(.data) - _KERNEL_BASE) {
 		*(.padata)
 		*(.data .data.*)
 	}
 
 	/* Zero-initialised data */
-	.bss : AT(ADDR(.bss) - KERNEL_BASE) {
+	.bss : AT(ADDR(.bss) - _KERNEL_BASE) {
 		*(.bss .bss.*)
 	}
 
     . = ALIGN(0x1000);
 
-	PROVIDE(KERNEL_END = .);
+	PROVIDE(_KERNEL_END = .);
 
 	/DISCARD/ : {
 		*(.note .note.*)

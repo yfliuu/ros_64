@@ -129,6 +129,10 @@ start64_high:
 	mov %ax, %fs
 	mov %ax, %gs
 
+	/* check to see if we're booting a secondary core */
+    /* test %ebx, %ebx */
+    /* jnz entry64mp */
+
 	/* Set up stack pointer */
 	mov $init_stack, %rsp
 

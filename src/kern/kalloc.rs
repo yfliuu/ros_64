@@ -1,6 +1,7 @@
 use spin::Mutex;
 use lazy_static::lazy_static;
 use x86_64::{VirtAddr as VA};
+use x86_64::structures::paging::Page;
 use crate::*;
 
 #[repr(transparent)]
@@ -57,7 +58,6 @@ impl PhysPgAllocator {
                 VA::new(0x0)
             }
         }
-
     }
 }
 
@@ -77,6 +77,14 @@ pub fn kalloc() -> Option<VA> {
     match v.as_u64() {
         0x0 => None,
         _ => Some(v),
+    }
+}
+
+pub fn kalloc_pg() -> Option<Page> {
+    let v = KMEM.lock().kalloc();
+    match v.as_u64() {
+        0x0 => None,
+        _ => Some(Page::containing_address(v))
     }
 }
 

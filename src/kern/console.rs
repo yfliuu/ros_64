@@ -101,7 +101,7 @@ impl Writer {
             BACKSPACE => if pos > 0 { pos -= 1; }
             c => {
                 self.buffer.chars[pos as usize].write(ScreenChar {
-                    ascii_character: c as u8,
+                    ascii_character: c,
                     color_code: self.color_code,
                 });
                 pos += 1;

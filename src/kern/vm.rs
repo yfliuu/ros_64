@@ -1,83 +1,126 @@
-use crate::kern::kalloc::kalloc;
+use crate::kern::kalloc::{kalloc};
 use crate::*;
+use spin::Mutex;
+use x86_64::ux::u9;
+use x86_64::structures::paging::PageTable;
+use x86_64::structures::paging::PageTableFlags as Flags;
+use x86_64::structures::paging::PageTableEntry;
+use core::ptr::Unique;
 
-#[repr(C)]
-struct KernVM {
-    kpml4: VA,
-    kpdpt: VA,
-    kpgdir0: VA,
-    kpgdir1: VA,
-    iopgdir: VA,
-}
 
 lazy_static! {
-    static ref KVM: KernVM = init_vm();
+    static ref KPML4: Mutex<Unique<PageTable>> = Mutex::new({
+        let pg = kalloc().expect("KMapper new: not enough mem");
+        unsafe {
+            memset(pg.as_mut_ptr() as *mut u8, 0, PGSIZE);
+
+            let pml4 = pg.as_mut_ptr() as *mut PageTable;
+            Unique::new_unchecked(pml4)
+        }
+    });
 }
 
-fn init_vm() -> KernVM {
-    // These memory allocations should not fail. Panic on unwrap if failed.
-    let pml4 = kalloc().unwrap().as_mut_ptr::<u64>();
-    let pdpt = kalloc().unwrap().as_mut_ptr::<u64>();
-    let pgdir0 = kalloc().unwrap().as_mut_ptr::<u64>();
-    let pgdir1 = kalloc().unwrap().as_mut_ptr::<u64>();
-    let iopgdir = kalloc().unwrap().as_mut_ptr::<u64>();
+pub struct KMapper;
+pub struct UMapper;
 
-    memset(pml4, 0, PGSIZE);
-    memset(pdpt, 0, PGSIZE);
-    memset(iopgdir, 0, PGSIZE);
-
-    unsafe {
-        // Linear map the first 2GB of physical memory starting at
-        // 0xffffffff80000000 to 0x0
-
-        // 512GB per entry, 0xffffffff80000000 is at the start of the mapping of last entry
-        *pml4.offset(511) = v2p!(VA::from_ptr(pdpt).as_u64()) | PTE_P | PTE_W;
-
-        // 2GB (1GB per entry) directory pointer table entry
-        *pdpt.offset(511) = v2p!(VA::from_ptr(pgdir1).as_u64()) | PTE_P | PTE_W;
-        *pdpt.offset(510) = v2p!(VA::from_ptr(pgdir0).as_u64()) | PTE_P | PTE_W;
-
-        // IO pgdir
-        *pdpt.offset(509) = v2p!(VA::from_ptr(iopgdir).as_u64()) | PTE_P | PTE_W;
-
-        // map to 0x0. Marking PTE_PS to turn it into huge page (2MB) so
-        // we don't have to go a level deeper to map a bunch of page table entries.
-        // 4k seems too small for 64bit arch. But anyway we allocate 4k "page"
-        // in our physical allocator.
-        //
-        // We left shift 21 bits (instead of 22 bits on x86) here
-        // because on 64bit arch it's 9+9+9+9+12.
-        // If you're porting some code from 32bit then be careful.
-        // This bug won't cause you any trouble until you programming lapic and ioapic.
-        // The println is normal and everything seems normal.
-        // It took me quite a long time to figure out.
-        for n in 0..ENTRY_COUNT {
-            *pgdir0.offset(n as isize) = (n << 21) as u64 | PTE_P | PTE_W | PTE_PS;
-            *pgdir1.offset(n as isize) = ((n + 512) << 21) as u64 | PTE_P | PTE_W | PTE_PS;
+impl Mapper for KMapper {
+    unsafe fn setup_vm(&self, p4: &mut PageTable) -> Result<(), &'static str> {
+        // TODO: READ MAPPING FROM BOOTLOADER
+        // Virtual address, physical start, physical end, flags
+        // The KERN_BASE will be recognize as `struct KERN_BASE`, which
+        // I do not understand. Maybe it has something to do with the lazy_static.
+        let kd_u64 = KERN_DATA.align_up(PGSIZE).as_u64();
+        let target_mapping: [(u64, u64, u64, Flags); 4] = [
+            (KERN_BASE.as_u64(),          0,             EXTMEM,        Flags::WRITABLE),
+            (KERN_BASE.as_u64() + EXTMEM, EXTMEM,        v2p!(kd_u64),  Flags::empty()),
+            (kd_u64,                      v2p!(kd_u64),  PHYSTOP,       Flags::WRITABLE),
+            (DEVBASE,                     DEVSPACE,      0x100000000,   Flags::WRITABLE)
+        ];
+        for k in target_mapping.iter() {
+            let r = self.map(p4, VA::new(k.0), (k.2 - k.1) as usize, PA::new(k.1), k.3);
+            if r.is_err() { return Err(r.unwrap_err()); }
         }
 
-        // map device mem to physical address 0xfe000000
-        for n in 0..16 {
-            *iopgdir.offset(n) = (DEVSPACE + ((n as u64) << 21)) | PTE_PS | PTE_P | PTE_W | PTE_PWT | PTE_PCD;
+        Ok(())
+    }
+
+    fn init_vm(&self) -> () {}
+    fn switch_vm(&self) -> () {}
+}
+
+trait Mapper {
+    unsafe fn setup_vm(&self, p4: &mut PageTable) -> Result<(), &'static str>;
+    fn init_vm(&self) -> ();
+    fn switch_vm(&self) -> ();
+    unsafe fn map(&self, pg: &mut PageTable, st: VA, sz: usize, phys_addr: PA, flags: Flags)
+        -> Result<(), &'static str> {
+        let mut a = st.align_down(PGSIZE);
+        let mut pa = phys_addr;
+        let last = (a + (sz - 1)).align_down(PGSIZE);
+        while a < last {
+            match self.walk(pg, a, 4, true) {
+                Some(entry) => {
+                    if entry.flags().contains(Flags::PRESENT) { panic!("remap"); }
+                    entry.set_addr(pa, flags | Flags::PRESENT);
+                }
+                None => return Err("map failed")
+            }
+            a += PGSIZE;
+            pa += PGSIZE;
+        }
+
+        Ok(())
+    }
+
+    unsafe fn walk<'a>(&self, pg: &'a mut PageTable, va: VA, lvl: u8, create: bool) -> Option<&'a mut PageTableEntry> {
+        fn lvl_idx(pg: VA, lvl: u8) -> u9 {
+            match lvl {
+                1 => pg.p1_index(),
+                2 => pg.p2_index(),
+                3 => pg.p3_index(),
+                4 => pg.p4_index(),
+                _ => panic!("no such lvl")
+            }
+        }
+
+        let entry = &mut pg[lvl_idx(va, lvl)];
+        match entry.frame() {
+            Ok(fr) => {
+                if lvl > 1 {
+                    let ptr_next_lvl = p2v!(fr.start_address().as_u64()) as *mut PageTable;
+                    self.walk(&mut *ptr_next_lvl, va, lvl - 1, create)
+                } else { Some(entry) }
+            },
+            Err(_) => {
+                if create {
+                    if lvl > 1 {
+                        let new_page = kalloc().expect("walk: not enough mem");
+                        let new_page_pa = PA::new(v2p!(new_page.as_u64()));
+                        let ptr_next_lvl = new_page.as_mut_ptr() as *mut PageTable;
+                        memset(new_page.as_mut_ptr() as *mut u8, 0, PGSIZE);
+                        entry.set_addr(new_page_pa, Flags::PRESENT | Flags:: WRITABLE | Flags::USER_ACCESSIBLE);
+                        self.walk(&mut *ptr_next_lvl, va, lvl - 1, create)
+                    } else { Some(entry) }
+                } else { None }
+            },
         }
     }
 
-    KernVM {
-        kpml4: VA::from_ptr(pml4),
-        kpdpt: VA::from_ptr(pdpt),
-        kpgdir1: VA::from_ptr(pgdir1),
-        kpgdir0: VA::from_ptr(pgdir0),
-        iopgdir: VA::from_ptr(iopgdir),
-    }
+    fn free_vm(&self) -> () {}
 }
 
-pub fn kvm_alloc() -> () {
+pub unsafe fn kvm_alloc() -> () {
     switch_kvm();
 }
 
-fn switch_kvm() -> () {
-    let value = v2p!(KVM.kpml4.as_u64());
-    unsafe {
-        asm!("mov $0, %cr3" :: "r" (value) : "memory");
+unsafe fn switch_kvm() -> () {
+    let mut p4 = KPML4.lock();
+    match KMapper.setup_vm(p4.as_mut()) {
+        Err(e) => panic!("{}", e),
+        _ => {
+            let value = v2p!(VA::from_ptr(p4.as_mut() as *mut PageTable).as_u64());
+            asm!("mov $0, %cr3" :: "r" (value) : "memory");
+        }
     }
+
 }
