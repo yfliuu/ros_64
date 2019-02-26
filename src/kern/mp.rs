@@ -1,6 +1,7 @@
 use crate::*;
 use volatile::Volatile;
 use core::mem::uninitialized;
+use crate::kern::lapic::lapic_id;
 
 #[repr(C)]
 pub struct MP {
@@ -15,7 +16,7 @@ pub struct MP {
 }
 
 #[repr(C)]
-struct MPConf {
+pub struct MPConf {
     signature: [u8; 4],
     length: u16,
     version: u8,
@@ -31,7 +32,7 @@ struct MPConf {
 }
 
 #[repr(C)]
-struct MPProc {
+pub struct MPProc {
     etype: u8,
     apic_id: u8,
     version: u8,
@@ -42,7 +43,7 @@ struct MPProc {
 }
 
 #[repr(C)]
-struct MPioapic {
+pub struct MPioapic {
     etype: u8,
     apic_no: u8,
     version: u8,
@@ -51,7 +52,7 @@ struct MPioapic {
 }
 
 #[repr(C)]
-struct CPU {
+pub struct CPU {
     id: u8,
     apic_id: u8,
     // scheduler
@@ -215,4 +216,20 @@ fn sum(a: *const u8, len: usize) -> u64 {
         }
     }
     sum
+}
+
+// Return current cpu that calls this function
+pub fn my_cpu() -> Option<&'static CPU> {
+    use x86_64::instructions::interrupts::without_interrupts;
+    let mut cpu = None;
+    without_interrupts(|| unsafe {
+        let apic_id = lapic_id();
+        for i in 0..CPU_INFO.ncpu {
+            if CPU_INFO.cpus[i as usize].apic_id == apic_id as u8 {
+                cpu = Some(&CPU_INFO.cpus[i as usize]);
+                return;
+            }
+        }
+    });
+    cpu
 }

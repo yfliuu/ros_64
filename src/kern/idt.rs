@@ -7,7 +7,6 @@
 use crate::*;
 use x86_64::structures::idt::{ExceptionStackFrame, InterruptDescriptorTable, PageFaultErrorCode};
 use x86_64::PrivilegeLevel;
-use kern::gdt;
 use crate::kern::lapic::lapic_eoi;
 
 lazy_static! {
@@ -17,7 +16,7 @@ lazy_static! {
         unsafe {
             idt.double_fault
                 .set_handler_fn(double_fault_handler)
-                .set_stack_index(gdt::DOUBLE_FAULT_IST_INDEX);
+                .set_stack_index(0);
         }
         idt.general_protection_fault.set_handler_fn(general_protection_fault);
         idt[(T_IRQ0 + IRQ_TIMER) as usize].set_handler_fn(timer_interrupt_handler);

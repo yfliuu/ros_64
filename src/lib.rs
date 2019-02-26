@@ -3,6 +3,8 @@
 #![feature(abi_x86_interrupt)]
 #![feature(const_raw_ptr_deref)]
 #![feature(ptr_internals)]
+#![feature(allocator_api)]
+#![feature(thread_local)]
 
 use lazy_static::lazy_static;
 use x86_64::VirtAddr as VA;

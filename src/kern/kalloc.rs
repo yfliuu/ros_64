@@ -2,6 +2,7 @@ use spin::Mutex;
 use lazy_static::lazy_static;
 use x86_64::{VirtAddr as VA};
 use x86_64::structures::paging::Page;
+use core::alloc::{AllocErr, GlobalAlloc, Layout};
 use crate::*;
 
 #[repr(transparent)]
@@ -62,6 +63,17 @@ impl PhysPgAllocator {
 }
 
 unsafe impl Send for PhysPgAllocator {}
+
+// Global allocator.
+unsafe impl GlobalAlloc for PhysPgAllocator {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        null_mut()
+    }
+
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+
+    }
+}
 
 // Wrappers
 pub fn kinit1(st: VA, ed: VA) {

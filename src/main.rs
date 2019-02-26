@@ -23,8 +23,7 @@ pub unsafe extern "C" fn kmain() -> ! {
     ros::kern::lapic::lapic_init();
 
     println!("Loading GDT & IDT");
-    // Cannot use gdt in x86_64 crate because we have different schemes.
-    // The old gdt is good enough for now.
+    ros::kern::gdt::gdt_init();
     ros::kern::idt::idt_init();
 
     println!("Initializing IOAPIC");

@@ -77,6 +77,10 @@ impl Lapic {
 
     // Acknowledge interrupt.
     pub fn lapic_eoi(&self) -> () { self.wrt(EOI, 0) }
+    pub unsafe fn lapic_id(&self) -> u64 {
+        let ptr = self.lapic as *mut Volatile<u32>;
+        (*(ptr.offset(ID as isize))).read() as u64
+    }
 }
 
 pub fn lapic_init() -> () {
@@ -104,3 +108,6 @@ pub fn lapic_eoi() -> () {
 pub unsafe fn sti() -> () {
     asm!("sti");
 }
+
+// Return calling processor's lapic_id.
+pub unsafe fn lapic_id() -> u64 { LAPIC.lapic_id() }
