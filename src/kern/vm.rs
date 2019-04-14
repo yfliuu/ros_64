@@ -1,15 +1,15 @@
 use crate::kern::kalloc::{kalloc};
 use crate::*;
-use spin::Mutex;
+use crate::kern::proc::Proc;
 use x86_64::ux::u9;
-use x86_64::structures::paging::PageTable;
-use x86_64::structures::paging::PageTableFlags as Flags;
-use x86_64::structures::paging::PageTableEntry;
+use x86_64::structures::paging::page_table::PageTable;
+use x86_64::structures::paging::page_table::PageTableFlags as Flags;
+use x86_64::structures::paging::page_table::PageTableEntry;
 use core::ptr::Unique;
 
 
 lazy_static! {
-    static ref KPML4: Mutex<Unique<PageTable>> = Mutex::new({
+    static ref KPML4: Unique<PageTable> = {
         let pg = kalloc().expect("KMapper new: not enough mem");
         unsafe {
             memset(pg.as_mut_ptr() as *mut u8, 0, PGSIZE);
@@ -17,7 +17,7 @@ lazy_static! {
             let pml4 = pg.as_mut_ptr() as *mut PageTable;
             Unique::new_unchecked(pml4)
         }
-    });
+    };
 }
 
 pub struct KMapper;
@@ -44,20 +44,20 @@ impl Mapper for KMapper {
         Ok(())
     }
 
-    fn init_vm(&self) -> () {}
     fn switch_vm(&self) -> () {}
 }
 
 trait Mapper {
     unsafe fn setup_vm(&self, p4: &mut PageTable) -> Result<(), &'static str>;
-    fn init_vm(&self) -> ();
     fn switch_vm(&self) -> ();
+
+    // This function maps st
     unsafe fn map(&self, pg: &mut PageTable, st: VA, sz: usize, phys_addr: PA, flags: Flags)
         -> Result<(), &'static str> {
         let mut a = st.align_down(PGSIZE);
         let mut pa = phys_addr;
         let last = (a + (sz - 1)).align_down(PGSIZE);
-        while a < last {
+        while a <= last {
             match self.walk(pg, a, 4, true) {
                 Some(entry) => {
                     if entry.flags().contains(Flags::PRESENT) { panic!("remap"); }
@@ -106,21 +106,48 @@ trait Mapper {
         }
     }
 
+    unsafe fn init_vm(&self, pml4: &mut PageTable, init: *const u64, sz: usize) -> () {
+        if sz >= PGSIZE as usize { panic!("sz more than a page"); }
+        let mem = kalloc().expect("Not enough mem!");
+        let r = self.map(pml4, VA::zero(), sz, PA::new(v2p!(mem.as_u64())), Flags::WRITABLE | Flags::USER_ACCESSIBLE);
+        if let Ok(_) = r {
+            memmove(mem.as_mut_ptr() as *mut u8, init as *const u8, sz);
+        } else { panic!("init_vm map failed!"); }
+    }
+
+    fn free_vm(&self) -> () {}
+}
+
+impl Mapper for UMapper {
+    unsafe fn setup_vm(&self, _p4: &mut PageTable) -> Result<(), &'static str> { unimplemented!("setup_uvm not implemented") }
+    fn switch_vm(&self) -> () {}
     fn free_vm(&self) -> () {}
 }
 
 pub unsafe fn kvm_alloc() -> () {
-    switch_kvm();
+    let p4 = KPML4.as_ptr();
+    match KMapper.setup_vm(&mut *p4) {
+        Err(e) => panic!(e),
+        _ => switch_kvm()
+    }
 }
 
-unsafe fn switch_kvm() -> () {
-    let mut p4 = KPML4.lock();
-    match KMapper.setup_vm(p4.as_mut()) {
-        Err(e) => panic!("{}", e),
-        _ => {
-            let value = v2p!(VA::from_ptr(p4.as_mut() as *mut PageTable).as_u64());
-            asm!("mov $0, %cr3" :: "r" (value) : "memory");
-        }
-    }
+pub unsafe fn switch_kvm() -> () {
+    let p4 = KPML4.as_ptr();
+    let value = v2p!(VA::from_ptr(p4).as_u64());
+    asm!("mov $0, %cr3" :: "r" (value) : "memory");
+}
 
+pub unsafe fn switch_uvm(p: &Proc) -> () {
+    let p4 = p.get_pml4();
+    let value = VA::from_ptr(p4 as *const PageTable).as_u64();
+    asm!("mov $0, %cr3" :: "r" (value) : "memory");
+}
+
+pub unsafe fn setup_kvm(pt: &mut PageTable) -> Result<(), &'static str> {
+    KMapper.setup_vm(pt)
+}
+
+pub unsafe fn init_uvm(pml4: &mut PageTable, init: *const u64, sz: usize) {
+    UMapper.init_vm(pml4, init, sz);
 }

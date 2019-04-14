@@ -2,7 +2,6 @@ use spin::Mutex;
 use lazy_static::lazy_static;
 use x86_64::{VirtAddr as VA};
 use x86_64::structures::paging::Page;
-use core::alloc::{AllocErr, GlobalAlloc, Layout};
 use crate::*;
 
 #[repr(transparent)]
@@ -15,6 +14,7 @@ struct PhysPgAllocator {
     freelist: *mut Run,
 }
 
+// TODO: Change to Lock free structure
 lazy_static! {
     static ref KMEM: Mutex<PhysPgAllocator> = Mutex::new(PhysPgAllocator{
         freelist: null_mut(),
@@ -30,7 +30,7 @@ impl PhysPgAllocator {
 
     fn free_range(&mut self, st: VA, ed: VA) -> () {
         let  mut p = st.align_up(PGSIZE);
-        while p + PGSIZE <= ed {
+        while p + PGSIZE < ed {
             self.kfree(p);
             p += PGSIZE;
         }
@@ -65,18 +65,18 @@ impl PhysPgAllocator {
 unsafe impl Send for PhysPgAllocator {}
 
 // Global allocator.
-unsafe impl GlobalAlloc for PhysPgAllocator {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        null_mut()
-    }
-
-    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-
-    }
-}
+//unsafe impl GlobalAlloc for PhysPgAllocator {
+//    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+//        unimplemented!()
+//    }
+//
+//    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+//        unimplemented!()
+//    }
+//}
 
 // Wrappers
-pub fn kinit1(st: VA, ed: VA) {
+pub fn kinit(st: VA, ed: VA) {
     KMEM.lock().kinit1(st, ed);
 }
 

@@ -3,7 +3,7 @@
 
 
 use core::panic::PanicInfo;
-use ros::{println, p2v};
+use ros::{println, p2v, PHYSTOP};
 use x86_64::VirtAddr as VA;
 use ros::hlt_loop;
 
@@ -11,7 +11,7 @@ use ros::hlt_loop;
 #[no_mangle] // don't mangle the name of this function
 pub unsafe extern "C" fn kmain() -> ! {
     println!("Early init physical page allocator");
-    ros::kern::kalloc::kinit1(*ros::KERN_END, VA::new(p2v!(4*1024*1024 as u64)));
+    ros::kern::kalloc::kinit(*ros::KERN_END, VA::new(p2v!(4*1024*1024 as u64)));
 
     println!("Initializing virtual memory");
     ros::kern::vm::kvm_alloc();
@@ -23,7 +23,7 @@ pub unsafe extern "C" fn kmain() -> ! {
     ros::kern::lapic::lapic_init();
 
     println!("Loading GDT & IDT");
-    ros::kern::gdt::gdt_init();
+    ros::kern::gdt64::gdt_init();
     ros::kern::idt::idt_init();
 
     println!("Initializing IOAPIC");
@@ -35,7 +35,12 @@ pub unsafe extern "C" fn kmain() -> ! {
     println!("Initializing UART");
     ros::kern::uart::uart_init();
 
-    ros::kern::lapic::sti();
+    println!("Initializing memory");
+    ros::kern::kalloc::kinit(VA::new(p2v!(4*1024*1024 as u64)), VA::new(p2v!(PHYSTOP)));
+
+    println!("User space initialization");
+    ros::kern::proc::user_init();
+
     hlt_loop();
 }
 

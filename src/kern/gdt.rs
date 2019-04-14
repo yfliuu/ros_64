@@ -1,5 +1,9 @@
 // This part of code is modified from redox kernel
 
+
+// This is not used anymore! Replaced with gdt64.rs
+
+
 //! Global descriptor table
 use crate::*;
 use core::mem;
@@ -115,11 +119,8 @@ pub unsafe fn gdt_init() {
 
     // Load the segment descriptors
     set_cs(SegmentSelector::new(GDT_KERNEL_CODE as u16, PrivilegeLevel::Ring0));
-    segmentation::load_ds(SegmentSelector::new(GDT_KERNEL_DATA as u16, PrivilegeLevel::Ring0));
-    segmentation::load_es(SegmentSelector::new(GDT_KERNEL_DATA as u16, PrivilegeLevel::Ring0));
     segmentation::load_fs(SegmentSelector::new(GDT_KERNEL_DATA as u16, PrivilegeLevel::Ring0));
     segmentation::load_gs(SegmentSelector::new(GDT_KERNEL_DATA as u16, PrivilegeLevel::Ring0));
-    segmentation::load_ss(SegmentSelector::new(GDT_KERNEL_DATA as u16, PrivilegeLevel::Ring0));
 }
 
 /// Initialize GDT with TLS
@@ -155,11 +156,8 @@ pub unsafe fn init_paging(tcb_offset: usize, stack_offset: usize) {
 
     // Reload the segment descriptors
     set_cs(SegmentSelector::new(GDT_KERNEL_CODE as u16, PrivilegeLevel::Ring0));
-    segmentation::load_ds(SegmentSelector::new(GDT_KERNEL_DATA as u16, PrivilegeLevel::Ring0));
-    segmentation::load_es(SegmentSelector::new(GDT_KERNEL_DATA as u16, PrivilegeLevel::Ring0));
-    segmentation::load_fs(SegmentSelector::new(GDT_KERNEL_TLS as u16, PrivilegeLevel::Ring0));
+    segmentation::load_fs(SegmentSelector::new(GDT_KERNEL_TLS  as u16, PrivilegeLevel::Ring0));
     segmentation::load_gs(SegmentSelector::new(GDT_KERNEL_DATA as u16, PrivilegeLevel::Ring0));
-    segmentation::load_ss(SegmentSelector::new(GDT_KERNEL_DATA as u16, PrivilegeLevel::Ring0));
 
     // Load the task register
     load_tss(SegmentSelector::new(GDT_TSS as u16, PrivilegeLevel::Ring0));

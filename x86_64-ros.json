@@ -11,7 +11,11 @@
   "linker": "rust-lld",
   "pre-link-args": {
     "ld": ["-m64"],
-    "ld.lld": ["--script=src/kernel.ld"]
+    "ld.lld": ["--script=src/kernel.ld",
+      "--format=binary",
+      "target/x86_64-ros/debug/initcode",
+      "--format=default"
+    ]
   },
   "panic-strategy": "abort",
   "disable-redzone": true,

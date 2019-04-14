@@ -16,10 +16,12 @@ OBJDIR := target/x86_64-ros/debug/
 # Compiler options (FOR BOOTLOADER ONLY)
 CFLAGS := -fno-pic -static -fno-builtin -fno-strict-aliasing -O2 -Wall -MD -ggdb -m32 -Werror -fno-omit-frame-pointer
 CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
+CFLAGS64 := -fno-pic -static -fno-builtin -fno-strict-aliasing -O2 -Wall -MD -ggdb -m64 -Werror -fno-omit-frame-pointer
 ASFLAGS := -m32 -gdwarf-2 -Wa,-divide
 LDFLAGS := -m elf_i386
 
 # Objects (We only build bootloader using gcc toolchain, leave the rest to cargo)
+KERNDIR := src/kern/
 BTLDERDIR := src/bootloader/
 BIN := ros.img
 
@@ -52,6 +54,13 @@ $(OBJDIR)bootblock: $(BTLDERDIR)bootasm.S $(BTLDERDIR)bootmain.c
 $(OBJDIR)fs.img:
 	dd if=/dev/zero of=$(OBJDIR)fs.img count=1000
 
+# Init code, the first user code
+$(OBJDIR)initcode: $(KERNDIR)initcode.S
+	@mkdir -p $(OBJDIR)
+	$(CC) $(CFLAGS64) -nostdinc -I. -c $(KERNDIR)initcode.S -o $(OBJDIR)initcode.o
+	$(LD) -m elf_x86_64 -nodefaultlibs -N -e user_start -Ttext 0 -o $(OBJDIR)initcode.out $(OBJDIR)initcode.o
+	$(OBJCOPY) -S -O binary $(OBJDIR)initcode.out $(OBJDIR)initcode
+
 # Create a file, put bootblock in front and append ros
 $(BIN): $(OBJDIR)ros $(OBJDIR)bootblock $(OBJDIR)fs.img
 	dd if=/dev/zero of=$(BIN) count=10000
@@ -60,7 +69,7 @@ $(BIN): $(OBJDIR)ros $(OBJDIR)bootblock $(OBJDIR)fs.img
 
 # The binary built by cargo (ros) should be linked with entry stub according to linker script.
 # The compilation of the entry stub (entry.S) is done in build script (build.rs).
-$(OBJDIR)ros:
+$(OBJDIR)ros: $(OBJDIR)initcode
 	cargo xbuild --target=x86_64-ros.json
 
 # CDROM booting.
@@ -110,7 +119,7 @@ check_multiboot: $(OBJDIR)ros
 # No recompilation of core and builtins
 clean:
 	rm -f .gdbinit $(OBJDIR)ros \
-		  $(OBJDIR)entry.o $(OBJDIR)bootblock $(BIN) ros.asm ros.iso
+		  $(OBJDIR)entry.o $(OBJDIR)bootblock $(BIN) ros.asm ros.iso $(OBJDIR)initcode
 	rm -rf target/isodir
 
 cclean:

@@ -1,35 +1,11 @@
 use crate::*;
-use volatile::Volatile;
-use core::mem::uninitialized;
-use crate::kern::lapic::lapic_id;
+use crate::kern::proc::ProcState;
+use x86_64::structures::tss::TaskStateSegment;
+use kern::proc::Context;
+use kern::proc::Proc;
+use array_init::array_init;
 
-#[repr(C)]
-pub struct MP {
-    signature: [u8; 4],
-    physaddr: u32,
-    length: u8,
-    specrev: u8,
-    checksum: u8,
-    mtype: u8,
-    imcrp: u8,
-    reserved: [u8; 3]
-}
 
-#[repr(C)]
-pub struct MPConf {
-    signature: [u8; 4],
-    length: u16,
-    version: u8,
-    checksum: u8,
-    product: [u8; 20],
-    oemtable: u32,
-    oemlength: u16,
-    entry: u16,
-    lapicaddr: u32,
-    xlength: u16,
-    xchecksum: u8,
-    reserved: u8,
-}
 
 #[repr(C)]
 pub struct MPProc {
@@ -52,22 +28,66 @@ pub struct MPioapic {
 }
 
 #[repr(C)]
+#[thread_local]
 pub struct CPU {
-    id: u8,
-    apic_id: u8,
-    // scheduler
-    // taskstate
-    // segdesc
-    started: Volatile<bool>,
-    ncli: u64,
-    intena: bool
+    pub id: u8,
+    pub apic_id: u8,
+    pub scheduler: Context,
+    pub taskstate: TaskStateSegment,
+    pub gdt: Option<&'static [u64; 8]>,
+    pub started: bool,
+    pub ncli: u64,
+    pub intena: bool,
+    pub proc: Option<&'static mut Proc<'static>>,
 }
 
-pub struct CpuInfo {
-    cpus: [CPU; MAX_CPU],
-    lapic: VA,
-    ncpu: u8,
-    ioapicid: u8,
+static mut MY_CPU: CPU = CPU::new(0, 0);
+
+impl CPU {
+    const fn new(id: u8, apic_id: u8) -> Self {
+        CPU {
+            id: id,
+            apic_id: apic_id,
+            scheduler: Context::new(),
+            taskstate: TaskStateSegment::new(),
+            // GDTs may be per core
+            gdt: None,
+            started: false,
+            ncli: 0,
+            intena: false,
+            proc: None,
+        }
+    }
+
+    pub fn set_proc(&mut self, proc: &'static mut Proc) -> () {
+        self.proc = Some(proc)
+    }
+
+    pub fn get_proc(&self) -> &Proc {
+        if let Some(ref x) = self.proc {
+            x
+        } else { panic!("Proc empty!"); }
+    }
+
+    pub fn set_proc_state(&mut self, state: ProcState) -> () {
+        if let Some(ref mut p) = self.proc {
+            p.set_state(state);
+        } else { panic!("CPU has no proc!"); }
+    }
+
+    pub fn clear_proc(&mut self) -> () { self.proc = None; }
+}
+
+#[repr(C)]
+pub struct MP {
+    signature: [u8; 4],
+    physaddr: u32,
+    length: u8,
+    specrev: u8,
+    checksum: u8,
+    mtype: u8,
+    imcrp: u8,
+    reserved: [u8; 3]
 }
 
 impl MP {
@@ -76,17 +96,17 @@ impl MP {
     // 1) in the first KB of the EBDA;
     // 2) in the last KB of system base memory;
     // 3) in the BIOS ROM between 0xe0000 and 0xfffff. (In QEMU we will find it in this option)
-    unsafe fn search() -> Option<*const MP> {
-        unsafe fn mp_search_1(a: u64, len: u64) -> Option<*const MP> {
+    unsafe fn search() -> Option<&'static MP> {
+        unsafe fn mp_search_1(a: u64, len: u64) -> Option<&'static MP> {
             let addr: u64 = p2v!(a);
-            let e: u64 = addr + len;
-            let mut p: u64 = addr;
+            let e = addr + len;
+            let mut p = addr;
             while p < e {
                 if memcmp(p as *const u8, "_MP_".as_ptr(), 4) &&
                     sum(p as *const u8, size_of::<MP>()) == 0 {
-                    return Some(p as *const MP);
+                    return Some(&*(p as *const MP));
                 }
-                p = p + size_of::<MP>() as u64;
+                p += size_of::<MP>() as u64;
             }
             None
         }
@@ -95,72 +115,87 @@ impl MP {
         let p: u64 = (((*bda.offset(0x0f) as u64) << 8) |
             (*bda.offset(0x0e) as u64)) << 4;
 
-        match p {
-            0 => {
-                let p = (((*bda.offset(0x14) as u64) << 8) |
-                    ((*bda.offset(0x13) as u64) << 8)) << 10;
-                mp_search_1(p as u64 - 1024, 1024)
-            }
-            _ => { match mp_search_1(p as u64, 1024) {
-                Some(x) => Some(x),
-                None => mp_search_1(0xf0000, 0x10000)
-            } }
+        if p == 0 {
+            let p: u64 = (((*bda.offset(0x14) as u64) << 8) |
+                ((*bda.offset(0x13) as u64) << 8)) << 10;
+            mp_search_1(p - 1024, 1024)
+        }
+        else {
+            mp_search_1(p, 1024).or_else(||{
+                mp_search_1(0xf0000, 0x10000)
+            })
         }
     }
 }
 
+#[repr(C)]
+pub struct MPConf {
+    signature: [u8; 4],
+    length: u16,
+    version: u8,
+    checksum: u8,
+    product: [u8; 20],
+    oemtable: u32,
+    oemlength: u16,
+    entry: u16,
+    lapicaddr: u32,
+    xlength: u16,
+    xchecksum: u8,
+    reserved: u8,
+}
+
 impl MPConf {
-    unsafe fn is_valid(&self) -> bool {
+    fn is_valid(&self) -> bool { unsafe {
         memcmp(self.signature.as_ptr(), "PCMP".as_ptr(), 4) &&
             (self.version == 1 || self.version == 4) &&
             sum(self.signature.as_ptr(), self.length as usize) == 0
-    }
+    } }
 
-    fn config(option_mp: Option<*const MP>) -> Option<*const MPConf> {
+    unsafe fn config(option_mp: Option<&'static MP>) -> Option<&'static MPConf> {
         match option_mp {
-            Some(mp) => { unsafe {
-                if (*mp).physaddr == 0 { return None }
-                let phys_addr = (*mp).physaddr as u64;
-                let conf = p2v!(phys_addr) as *const MPConf;
-                if !(*conf).is_valid() { return None }
-                Some(conf)
-            } }
+            Some(mp) => {
+                if mp.physaddr == 0 { return None }
+                let phys_addr = mp.physaddr as u64;
+                let conf = &*(p2v!(phys_addr) as *const MPConf);
+                if !conf.is_valid() { None }
+                else { Some(conf) }
+            }
             None => None
         }
     }
 }
 
-impl CPU {
-    fn new(id: u8, apic_id: u8) -> Self {
-        CPU {
-            id: id,
-            apic_id: apic_id,
-            started: Volatile::new(false),
-            ncli: 0,
-            intena: false,
-        }
-    }
+// This struct is read only.
+// Do not use the cpus array.
+// TODO: clean up the cpus array. We use thread_local MY_CPU now.
+pub struct CpuInfo {
+    cpus: [(u8, u8); MAX_CPU],
+    lapic: VA,
+    ncpu: u8,
+    ioapicid: u8,
 }
 
 impl CpuInfo {
     unsafe fn init() -> Self {
         let mp = MP::search();
         let opt_conf = MPConf::config(mp);
-        let mut cpus: [CPU; MAX_CPU] = uninitialized();
+        let mut cpus: [(u8, u8); MAX_CPU] = [(0, 0); MAX_CPU];
         let mut ncpu: u8 = 0;
         let mut ioapic_id: u8 = 0;
 
         match opt_conf {
             Some(conf) => {
-                let mut p = conf.offset(1) as *const u8;
-                let length = (*conf).length;
-                let e = (conf as *const u8).offset(length as isize);
+                let ptr = conf as *const MPConf;
+                let mut p = ptr.offset(1) as *const u8;
+                let length = conf.length;
+                let e = (ptr as *const u8).offset(length as isize);
                 println!("lapic pa: 0x{:x}", (*conf).lapicaddr);
                 while p < e {
                     match *p {
                         MPPROC => {
                             let proc = p as *const MPProc;
-                            cpus[ncpu as usize] = CPU::new(ncpu, (*proc).apic_id);
+                            cpus[ncpu as usize] = (ncpu, (*proc).apic_id);
+                            MY_CPU.apic_id = (*proc).apic_id;
                             ncpu += 1;
                             p = p.offset(size_of::<MPProc>() as isize);
                         }
@@ -196,8 +231,8 @@ lazy_static! {
 pub fn mp_init() -> () {
     // Read the static variable to trigger init()
     for i in 0..CPU_INFO.ncpu {
-        println!("cpu{}: id: {}, apic_id: {}", i, CPU_INFO.cpus[i as usize].id,
-                 CPU_INFO.cpus[i as usize].apic_id);
+        println!("cpu{}: id: {}, apic_id: {}", i, CPU_INFO.cpus[i as usize].0,
+                 CPU_INFO.cpus[i as usize].1);
     }
     println!("lapic: 0x{:x}", CPU_INFO.lapic.as_u64());
     println!("ioapicid: {}", CPU_INFO.ioapicid);
@@ -219,17 +254,6 @@ fn sum(a: *const u8, len: usize) -> u64 {
 }
 
 // Return current cpu that calls this function
-pub fn my_cpu() -> Option<&'static CPU> {
-    use x86_64::instructions::interrupts::without_interrupts;
-    let mut cpu = None;
-    without_interrupts(|| unsafe {
-        let apic_id = lapic_id();
-        for i in 0..CPU_INFO.ncpu {
-            if CPU_INFO.cpus[i as usize].apic_id == apic_id as u8 {
-                cpu = Some(&CPU_INFO.cpus[i as usize]);
-                return;
-            }
-        }
-    });
-    cpu
+pub unsafe fn my_cpu() -> &'static mut CPU {
+    &mut MY_CPU
 }
