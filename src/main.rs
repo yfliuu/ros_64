@@ -41,6 +41,10 @@ pub unsafe extern "C" fn kmain() -> ! {
     println!("User space initialization");
     ros::kern::proc::user_init();
 
+    println!("Ready to run scheduler");
+    mp_main();
+
+    println!("FATAL ERROR: DROP TO MAIN HLT LOOP");
     hlt_loop();
 }
 
@@ -48,4 +52,16 @@ pub unsafe extern "C" fn kmain() -> ! {
 fn panic(info: &PanicInfo) -> ! {
     println!("{}", info);
     hlt_loop()
+}
+
+#[no_mangle]
+unsafe fn mp_enter() {
+    ros::kern::vm::switch_kvm();
+    ros::kern::gdt64::gdt_init();
+    ros::kern::lapic::lapic_init();
+    mp_main();
+}
+
+unsafe fn mp_main() -> ! {
+    ros::kern::proc::scheduler();
 }

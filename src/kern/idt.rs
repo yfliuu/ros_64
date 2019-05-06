@@ -8,6 +8,9 @@ use crate::*;
 use x86_64::structures::idt::{InterruptStackFrame, InterruptDescriptorTable, PageFaultErrorCode};
 use x86_64::PrivilegeLevel;
 use crate::kern::lapic::lapic_eoi;
+use crate::kern::mp::my_cpu;
+use crate::kern::spinlock::SpinLock;
+use crate::kern::proc::wakeup;
 
 lazy_static! {
     static ref IDT: InterruptDescriptorTable = {
@@ -39,6 +42,9 @@ lazy_static! {
         idt
     };
 }
+
+static TICKSLOCK: SpinLock = SpinLock::new();
+static mut ticks: u64 = 0;
 
 pub fn idt_init() {
     IDT.load();
@@ -157,7 +163,15 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: &mut Interrup
 }
 
 extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: &mut InterruptStackFrame) {
-    print!(".");
+    unsafe {
+        if my_cpu().id == 0 {
+            TICKSLOCK.acquire();
+            ticks += 1;
+            let ticks_addr = &ticks as *const u64;
+            wakeup(VA::from_ptr(ticks_addr));
+            TICKSLOCK.release();
+        }
+    }
     lapic_eoi();
 }
 

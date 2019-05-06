@@ -12,6 +12,7 @@ use x86_64::structures::paging::page_table::PageTable;
 use array_init::array_init;
 use core::mem::{MaybeUninit, uninitialized};
 use core::default::Default;
+use x86_64::instructions::interrupts::without_interrupts;
 
 const NPROC: usize = 32;
 const NO_FILE: usize = 16;
@@ -175,6 +176,10 @@ impl<'a> Proc<'a> {
         self.state = state;
     }
 
+    pub fn set_chan(&mut self, chan: VA) -> () {
+        self.chan = chan;
+    }
+
     pub fn get_parent(&self) -> &Proc {
         if let Some (ref x) = self.parent {
             *x
@@ -227,8 +232,6 @@ pub unsafe fn user_init() -> () {
     let ptr = PTABLE.as_ptr();
     let mut p: &'static mut Proc = (*ptr).alloc_proc().expect("alloc_proc failed");
 
-    // TODO: _bin_init_code and sz
-
     let ptr = kalloc().expect("Allocate failed!").as_mut_ptr::<PageTable>();
     memset(ptr, 0, 4096);
     p.pml4 = Some(&mut *ptr);
@@ -271,6 +274,63 @@ pub unsafe fn scheduler() -> ! {
         }
         PTLOCK.release();
     }
+}
+
+pub unsafe fn sched() {
+    let p = my_proc().expect("Sched my_proc empty");
+    if p.state == ProcState::RUNNING { panic!("sched runnning"); }
+
+    let mut intena = my_cpu().intena;
+    switch(&p.get_ctx(), &&my_cpu().scheduler)
+}
+
+
+pub unsafe fn sleep(chan: VA, lk: &SpinLock) -> () {
+    let c = my_cpu();
+    let mut p: Option<&Proc> = None;
+
+    let p = my_proc().expect("Sleep");
+    // if lk != PTLOCK {
+    //     PTLOCK.acquire();
+    //     lk.release();
+    // }
+    // p.chan = chan;
+    // p.state = ProcState::SLEEPING;
+    c.set_proc_chan(chan);
+    c.set_proc_state(ProcState::SLEEPING);
+
+    sched();
+
+    // p.chan = VA::zero();
+    c.set_proc_chan(VA::zero());
+
+    // if lk != PTLOCK {
+    //     PTLOCK.release();
+    //     lk.acquire();
+    // }
+}
+
+pub unsafe fn wakeup1(chan: VA) -> () {
+    for mut p in (*PTABLE.as_ptr()).procs.iter_mut() {
+        if p.state == ProcState::SLEEPING && p.chan == chan {
+            p.state = ProcState::RUNNABLE;
+        }
+    }
+}
+
+pub unsafe fn wakeup(chan: VA) -> () {
+    PTLOCK.acquire();
+    wakeup1(chan);
+    PTLOCK.release();
+}
+
+pub unsafe fn my_proc() -> Option<&'static Proc<'static>> {
+    let mut p = None;
+    without_interrupts(||{
+        let c = my_cpu();
+        p = Some(c.get_proc());
+    });
+    return p;
 }
 
 #[naked]

@@ -119,6 +119,8 @@ pub const MASKED   :u32 = 0x00010000;   // Interrupt masked
 pub const TICR     :u32 = (0x0380/4);   // Timer Initial Count
 pub const TCCR     :u32 = (0x0390/4);   // Timer Current Count
 pub const TDCR     :u32 = (0x03E0/4);   // Timer Divide Configuration
+pub const CMOS_PORT:u32 = (0x70);
+pub const CMOS_RETURN: u32 = (0x71);
 
 // ----------------IOAPIC--------------------
 pub const IOAPIC_ADDR:  u64 = 0xFEC00000;   // Default physical address of IO APIC

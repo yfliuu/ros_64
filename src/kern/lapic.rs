@@ -1,6 +1,7 @@
 use kern::mp::CPU_INFO;
 use crate::*;
 use volatile::Volatile;
+use x86_64::instructions::port::Port;
 
 #[repr(transparent)]
 pub struct Lapic {
@@ -81,6 +82,34 @@ impl Lapic {
         let ptr = self.lapic as *mut Volatile<u32>;
         (*(ptr.offset(ID as isize))).read() as u64
     }
+
+    pub unsafe fn start_ap(&self, apic_id: u8, addr: VA) -> () {
+        // "The BSP must initialize CMOS shutdown code to 0AH
+        // and the warm reset vector (DWORD based at 40:67) to point at
+        // the AP startup code prior to the [universal startup algorithm]."
+        Port::new(CMOS_PORT as u16).write(0xF as u32);  // offset 0xF is shutdown code
+        Port::new((CMOS_PORT + 1) as u16).write(0x0A as u32);
+        let wrv = VA::new(p2v!((0x40<<4 | 0x67))).as_mut_ptr::<u16>(); // Warm reset vector
+
+        *wrv.offset(0) = 0;
+        *wrv.offset(1) = (addr.as_u64() >> 4) as u16;
+
+        // "Universal startup algorithm."
+        // Send INIT (level-triggered) interrupt to reset other CPU.
+        self.wrt(ICRHI, (apic_id as u32) << 24);
+        self.wrt(ICRLO, INIT | LEVEL | ASSERT);
+        self.wrt(ICRLO, INIT | LEVEL);
+
+        // Send startup IPI (twice!) to enter code.
+        // Regular hardware is supposed to only accept a STARTUP
+        // when it is in the halted state due to an INIT.  So the second
+        // should be ignored, but it is part of the official Intel algorithm.
+        // Bochs complains about the second one.  Too bad for Bochs.
+        for _ in 0..2 {
+            self.wrt(ICRHI, (apic_id as u32) << 24);
+            self.wrt(ICRLO, STARTUP | (addr.as_u64() >> 12) as u32);
+        }
+    }
 }
 
 pub fn lapic_init() -> () {
@@ -89,8 +118,6 @@ pub fn lapic_init() -> () {
 
     // Disable the 8259A because we're in SMP environment.
     // OSDevWiki: Disable the 8259 PIC properly is nearly as important as setting up the APIC.
-    use x86_64::instructions::port::Port;
-
     const IO_PIC1: u16 = 0x20;
     const IO_PIC2: u16 = 0xA0;
 
@@ -111,3 +138,7 @@ pub unsafe fn sti() -> () {
 
 // Return calling processor's lapic_id.
 pub unsafe fn lapic_id() -> u64 { LAPIC.lapic_id() }
+
+pub unsafe fn lapic_start_ap(apic_id: u8, addr: VA) -> () {
+    LAPIC.start_ap(apic_id, addr);
+}

@@ -3,7 +3,6 @@ use crate::kern::proc::ProcState;
 use x86_64::structures::tss::TaskStateSegment;
 use kern::proc::Context;
 use kern::proc::Proc;
-use array_init::array_init;
 
 
 
@@ -69,9 +68,21 @@ impl CPU {
         } else { panic!("Proc empty!"); }
     }
 
+//     pub fn get_mut_proc(&mut self) -> &mut Proc {
+//         if let Some(ref mut p) = self.proc {
+//             p
+//         } else { panic!("Proc empty"); }
+//     }
+
     pub fn set_proc_state(&mut self, state: ProcState) -> () {
         if let Some(ref mut p) = self.proc {
             p.set_state(state);
+        } else { panic!("CPU has no proc!"); }
+    }
+
+    pub fn set_proc_chan(&mut self, chan: VA) -> () {
+        if let Some(ref mut p) = self.proc {
+            p.set_chan(chan);
         } else { panic!("CPU has no proc!"); }
     }
 
