@@ -32,6 +32,11 @@ extern "C" {
     static _binary_target_x86_64_ros_debug_initcode_start: u64;
     static _binary_target_x86_64_ros_debug_initcode_end:   u64;
     static _binary_target_x86_64_ros_debug_initcode_size:  u64;
+    static _binary_target_x86_64_ros_debug_entryother_start: u64;
+    static _binary_target_x86_64_ros_debug_entryother_end:   u64;
+    static _binary_target_x86_64_ros_debug_entryother_size:  u64;
+
+    static start: u64;
 }
 
 // Use these. See kernel.ld for more details.
@@ -39,9 +44,13 @@ lazy_static! {
     pub static ref KERN_BASE: VA = VA::from_ptr(unsafe {&_KERNEL_BASE as *const u64});
     pub static ref KERN_END:  VA = VA::from_ptr(unsafe {&_KERNEL_END  as *const u64});
     pub static ref KERN_DATA: VA = VA::from_ptr(unsafe {&_KERNEL_DATA as *const u64});
+    pub static ref ENTRY: VA = VA::from_ptr(unsafe {&start as *const u64});
     pub static ref BINARY_INITCODE_START: VA = VA::from_ptr(unsafe {&_binary_target_x86_64_ros_debug_initcode_start as *const u64} );
     pub static ref BINARY_INITCODE_END:   VA = VA::from_ptr(unsafe {&_binary_target_x86_64_ros_debug_initcode_end   as *const u64} );
     pub static ref BINARY_INITCODE_SIZE:  VA = VA::from_ptr(unsafe {&_binary_target_x86_64_ros_debug_initcode_size  as *const u64} );
+    pub static ref BINARY_ENTRYOTHER_START: VA = VA::from_ptr(unsafe {&_binary_target_x86_64_ros_debug_entryother_start as *const u64} );
+    pub static ref BINARY_ENTRYOTHER_END:   VA = VA::from_ptr(unsafe {&_binary_target_x86_64_ros_debug_entryother_end   as *const u64} );
+    pub static ref BINARY_ENTRYOTHER_SIZE:  VA = VA::from_ptr(unsafe {&_binary_target_x86_64_ros_debug_entryother_size  as *const u64} );
 }
 
 

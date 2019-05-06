@@ -3,7 +3,8 @@ use crate::kern::proc::ProcState;
 use x86_64::structures::tss::TaskStateSegment;
 use kern::proc::Context;
 use kern::proc::Proc;
-
+use crate::kern::kalloc::kalloc;
+use crate::kern::lapic::lapic_start_ap;
 
 
 #[repr(C)]
@@ -267,4 +268,29 @@ fn sum(a: *const u8, len: usize) -> u64 {
 // Return current cpu that calls this function
 pub unsafe fn my_cpu() -> &'static mut CPU {
     &mut MY_CPU
+}
+
+pub unsafe fn start_others() -> () {
+    let code_addr = p2v!(0x7000) as *mut u64;
+
+    memmove(code_addr, BINARY_ENTRYOTHER_START.as_mut_ptr(),
+            BINARY_ENTRYOTHER_SIZE.as_u64() as usize);
+
+    for c in 0..CPU_INFO.ncpu {
+        if c == my_cpu().id { continue; } // We've started already
+
+        let stack = kalloc().expect("start_others allocate stack failed");
+
+        *code_addr.offset(-4) = 0x8000;
+        *code_addr.offset(-8) = v2p!(ENTRY.as_u64());
+        *code_addr.offset(-16) = stack.as_u64() + PGSIZE;
+
+        lapic_start_ap(c, VA::from_ptr(0x7000 as *const u8));
+
+        // TODO: This does not work anymore by using #[thread_local].
+        // TODO: Try to find a way to access the variable in thread_local or redesign everything
+        // while !CPU_INFO.cpus[c].started {
+        //     ;
+        // }
+    }
 }

@@ -3,7 +3,7 @@
 
 
 use core::panic::PanicInfo;
-use ros::{println, p2v, PHYSTOP};
+use ros::{println, p2v, PHYSTOP, memmove};
 use x86_64::VirtAddr as VA;
 use ros::hlt_loop;
 
@@ -34,6 +34,10 @@ pub unsafe extern "C" fn kmain() -> ! {
 
     println!("Initializing UART");
     ros::kern::uart::uart_init();
+
+    println!("Start other APs");
+    // This does not work anymore by using #[thread_local]
+    // ros::kern::mp::start_others();
 
     println!("Initializing memory");
     ros::kern::kalloc::kinit(VA::new(p2v!(4*1024*1024 as u64)), VA::new(p2v!(PHYSTOP)));
